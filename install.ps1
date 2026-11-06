@@ -41,14 +41,32 @@ if (-not (Test-Admin)) {
   throw "Run this script from an elevated PowerShell (Run as Administrator)."
 }
 
+function Read-HostsText {
+  if (-not (Test-Path $HostsPath)) { return "" }
+  $raw = Get-Content -Path $HostsPath -Raw -ErrorAction SilentlyContinue
+  if ($null -eq $raw) { return "" }
+  return $raw
+}
+
 function Update-Hosts {
-  $content = Get-Content $HostsPath -Raw
-  $content = [regex]::Replace($content, "(?ms)^# BEGIN cursor-byok.*?^# END cursor-byok\r?\n?", "")
+  $content = Read-HostsText
+  $content = [regex]::Replace($content, "(?ms)^# BEGIN cursor-byok[^\r\n]*\r?\n.*?^# END cursor-byok[^\r\n]*\r?\n?", "")
+  $content = $content.TrimEnd()
   if (-not $Uninstall) {
-    $block = "$MarkBegin`r`n$Ip $($Hostnames -join ' ')`r`n$MarkEnd`r`n"
-    $content = $content.TrimEnd() + "`r`n`r`n" + $block
+    $block = "$MarkBegin`r`n$Ip $($Hostnames -join ' ')`r`n$MarkEnd"
+    $content = $content + "`r`n`r`n" + $block
   }
-  Set-Content -Path $HostsPath -Value $content -Encoding ASCII
+  $content = $content.TrimStart() + "`r`n"
+
+  # Safety: never write a suspiciously short file.
+  if ($content.Length -lt 50) {
+    throw "refusing to write hosts: resulting content too short (" + $content.Length + " chars)"
+  }
+
+  Copy-Item $HostsPath "$HostsPath.bak-cursor-byok" -Force -ErrorAction SilentlyContinue
+  $tmp = "$HostsPath.cursor-tmp"
+  Set-Content -Path $tmp -Value $content -Encoding ASCII -NoNewline
+  Move-Item -Path $tmp -Destination $HostsPath -Force
   ipconfig /flushdns | Out-Null
 }
 
