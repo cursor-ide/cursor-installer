@@ -118,10 +118,14 @@ $SUDO mkdir -p "$TARGET_HOME/.config/environment.d"
 printf "NODE_EXTRA_CA_CERTS=%s\n" "$CA_PATH" | $SUDO tee "$TARGET_HOME/.config/environment.d/99-cursor-byok.conf" >/dev/null
 $SUDO chown -R "$TARGET_USER" "$TARGET_HOME/.config/environment.d" 2>/dev/null || true
 
-if command -v systemctl >/dev/null 2>&1; then
-  if [[ -d "/run/user/$TARGET_UID" ]]; then
-    $SUDO -u "$TARGET_USER" \
+if command -v systemctl >/dev/null 2>&1 && [[ -d "/run/user/$TARGET_UID" ]]; then
+  if [[ "$(id -u)" -eq 0 && "$TARGET_USER" != "root" ]]; then
+    sudo -u "$TARGET_USER" env \
       XDG_RUNTIME_DIR="/run/user/$TARGET_UID" \
+      DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$TARGET_UID/bus" \
+      systemctl --user set-environment NODE_EXTRA_CA_CERTS="$CA_PATH" 2>/dev/null || true
+  else
+    XDG_RUNTIME_DIR="/run/user/$TARGET_UID" \
       DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$TARGET_UID/bus" \
       systemctl --user set-environment NODE_EXTRA_CA_CERTS="$CA_PATH" 2>/dev/null || true
   fi
