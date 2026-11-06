@@ -91,16 +91,19 @@ Write-Host "== 3/4 point Cursor agent hosts to $Ip"
 Update-Hosts
 
 Write-Host "== 4/4 set NODE_EXTRA_CA_CERTS (merged with any existing bundle)"
-$parts = @()
 $current = [Environment]::GetEnvironmentVariable("NODE_EXTRA_CA_CERTS", "User")
-if ($current -and (Test-Path $current)) {
-  $parts += (Get-Content $current -Raw)
-} elseif ($current) {
-  Write-Host ("  existing NODE_EXTRA_CA_CERTS not found, keeping value: " + $current)
-  $parts += ""
+$sourceText = ""
+if ($current -and $current -ne $CombinedPem -and (Test-Path $current)) {
+  $sourceText = Get-Content $current -Raw
+} elseif ($current -and $current -ne $CombinedPem) {
+  Write-Host ("  existing NODE_EXTRA_CA_CERTS not found, ignoring: " + $current)
 }
-$parts += (Get-Content $CaFile -Raw)
-Set-Content -Path $CombinedPem -Value ($parts -join "`r`n") -Encoding ASCII
+$sourceText += "`r`n" + (Get-Content $CaFile -Raw)
+
+# Dedupe certificate blocks so repeated runs do not grow the bundle.
+$blocks = [regex]::Matches($sourceText, '-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----') | ForEach-Object { $_.Value.Trim() }
+$unique = $blocks | Select-Object -Unique
+Set-Content -Path $CombinedPem -Value (($unique -join "`r`n") + "`r`n") -Encoding ASCII
 [Environment]::SetEnvironmentVariable("NODE_EXTRA_CA_CERTS", $CombinedPem, "User")
 
 Write-Host ""
