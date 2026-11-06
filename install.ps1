@@ -21,6 +21,7 @@ $HostsPath = Join-Path $env:SystemRoot "System32\drivers\etc\hosts"
 $WorkDir = Join-Path $env:ProgramData "cursor-byok"
 $CaFile = Join-Path $WorkDir "ca.crt"
 $CombinedPem = Join-Path $WorkDir "ca-combined.pem"
+$BasePem = Join-Path $WorkDir "base-ca.pem"
 
 $Hostnames = @(
   "agent.api5.cursor.sh", "agentn.api5.cursor.sh",
@@ -110,12 +111,13 @@ Update-Hosts
 
 Write-Host "== 4/4 set NODE_EXTRA_CA_CERTS (merged with any existing bundle)"
 $current = [Environment]::GetEnvironmentVariable("NODE_EXTRA_CA_CERTS", "User")
-$sourceText = ""
-if ($current -and $current -ne $CombinedPem -and (Test-Path $current)) {
-  $sourceText = Get-Content $current -Raw
-} elseif ($current -and $current -ne $CombinedPem) {
-  Write-Host ("  existing NODE_EXTRA_CA_CERTS not found, ignoring: " + $current)
+# Keep the user's original CA bundle so re-runs never drop their own roots (e.g. Charles).
+if (-not (Test-Path $BasePem) -and $current -and $current -ne $CombinedPem -and (Test-Path $current)) {
+  Copy-Item $current $BasePem -Force
+  Write-Host ("  saved existing bundle to " + $BasePem)
 }
+$sourceText = ""
+if (Test-Path $BasePem) { $sourceText = Get-Content $BasePem -Raw }
 $sourceText += "`r`n" + (Get-Content $CaFile -Raw)
 
 # Dedupe certificate blocks so repeated runs do not grow the bundle.
