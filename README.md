@@ -53,6 +53,8 @@ desktop session inherits `NODE_EXTRA_CA_CERTS`.
 ## Requirements
 
 * Cursor installed.
+* Windows: an **elevated** PowerShell (Run as Administrator).
+* Linux/macOS: run with `sudo`.
 * Outbound HTTPS to the proxy IP.
 * The proxy must be running and serve:
   * `GET /ca.crt` — the CA certificate (plain HTTP on port 80 is fine), and
@@ -123,6 +125,8 @@ Windows (elevated):
 ```
 
 This removes the hosts block, the CA from the trust store and the env var/file.
+On Windows the installer remembers your previous `NODE_EXTRA_CA_CERTS` value
+(for example a Charles/Proxyman bundle) and restores it instead of clearing it.
 Restart Cursor afterwards.
 
 ---
@@ -138,6 +142,20 @@ Cursor occasionally introduces new agent hostnames (for example 3.29 moved to
 
 Because the Cursor installation itself is untouched, updates no longer undo the
 redirect — only the hostname list may need refreshing.
+
+## Troubleshooting
+
+* **Cursor shows "Agent and Edit rely on custom models that require a paid subscription"**
+  — traffic is still reaching Cursor. Check that every agent hostname resolves to the
+  proxy (`Resolve-DnsName agentn.global.api5.cursor.sh` on Windows,
+  `getent hosts agentn.global.api5.cursor.sh` on Linux). New Cursor versions may add
+  hostnames; update the `Hostnames` list and re-run the installer.
+* **TLS error `self signed certificate in certificate chain`** — the CA is not trusted by
+  the process. Re-run the installer and restart Cursor from a session that has
+  `NODE_EXTRA_CA_CERTS` (log out/in on Linux).
+* **Commands hang / "Running command" forever** — the proxy must fall back from HTTP/2
+  shell streaming to plain shell execution for older Cursor builds; make sure you run a
+  current proxy image.
 
 ## Security notes
 
