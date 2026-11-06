@@ -55,10 +55,16 @@ function Update-Hosts {
 if ($Uninstall) {
   Write-Host "== removing hosts block"
   Update-Hosts
-  $certs = Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -like "*Cursor BYOK*" }
-  foreach ($c in $certs) {
-    certutil -delstore Root $c.Thumbprint | Out-Null
-    Write-Host ("removed certificate " + $c.Thumbprint)
+  $thumbFile = Join-Path $WorkDir "thumbprint.txt"
+  $thumbprints = @()
+  if (Test-Path $thumbFile) { $thumbprints += (Get-Content $thumbFile -Raw).Trim() }
+  if ($thumbprints.Count -eq 0) {
+    $thumbprints += (Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -like "*Cursor*" } | ForEach-Object { $_.Thumbprint })
+  }
+  foreach ($t in $thumbprints) {
+    if (-not $t) { continue }
+    certutil -delstore Root $t | Out-Null
+    Write-Host ("removed certificate " + $t)
   }
   $current = [Environment]::GetEnvironmentVariable("NODE_EXTRA_CA_CERTS", "User")
   if ($current -eq $CombinedPem) {
@@ -77,6 +83,9 @@ Invoke-WebRequest -Uri $url -OutFile $CaFile -UseBasicParsing
 
 Write-Host "== 2/4 trust CA in LocalMachine\Root"
 certutil -addstore -f Root $CaFile | Out-Null
+$caCert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($CaFile)
+Set-Content -Path (Join-Path $WorkDir "thumbprint.txt") -Value $caCert.Thumbprint -Encoding ASCII
+Write-Host ("   installed thumbprint " + $caCert.Thumbprint)
 
 Write-Host "== 3/4 point Cursor agent hosts to $Ip"
 Update-Hosts
