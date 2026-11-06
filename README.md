@@ -17,6 +17,9 @@ hostnames — see [Maintenance](#maintenance)).
 
 Default proxy: `203.0.113.10` (override with `-Ip` / `--ip` or `CURSOR_PROXY_IP`).
 
+Pinned to release **v1.0.0** (immutable, CDN-friendly). Replace `v1.0.0` with `main`
+if you want the latest commit instead of a release.
+
 ---
 
 ## Quick start
@@ -24,25 +27,25 @@ Default proxy: `203.0.113.10` (override with `-Ip` / `--ip` or `CURSOR_PROXY_IP`
 ### Linux (and macOS, untested)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/cursor-ide/cursor-installer/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.0.0/install.sh | sudo bash
 ```
 
 With a custom proxy IP:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/cursor-ide/cursor-installer/main/install.sh | sudo bash -s -- --ip 203.0.113.10
+curl -fsSL https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.0.0/install.sh | sudo bash -s -- --ip 203.0.113.10
 ```
 
 ### Windows (PowerShell **as Administrator**)
 
 ```powershell
-irm https://raw.githubusercontent.com/cursor-ide/cursor-installer/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.0.0/install.ps1 | iex
 ```
 
 With a custom proxy IP:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/cursor-ide/cursor-installer/main/install.ps1))) -Ip 203.0.113.10
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.0.0/install.ps1))) -Ip 203.0.113.10
 ```
 
 Then **restart Cursor**. On Linux, log out and back in once (or reboot) so the
@@ -115,13 +118,13 @@ Resolve-DnsName agentn.global.api5.cursor.sh -Type A | Select-Object -First 1 IP
 Linux/macOS:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/cursor-ide/cursor-installer/main/install.sh | sudo bash -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.0.0/install.sh | sudo bash -s -- --uninstall
 ```
 
 Windows (elevated):
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/cursor-ide/cursor-installer/main/install.ps1))) -Uninstall
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.0.0/install.ps1))) -Uninstall
 ```
 
 This removes the hosts block, the CA from the trust store and the env var/file.
