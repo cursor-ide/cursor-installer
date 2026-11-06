@@ -22,6 +22,7 @@ $WorkDir = Join-Path $env:ProgramData "cursor-byok"
 $CaFile = Join-Path $WorkDir "ca.crt"
 $CombinedPem = Join-Path $WorkDir "ca-combined.pem"
 $BasePem = Join-Path $WorkDir "base-ca.pem"
+$EnvOriginal = Join-Path $WorkDir "env-original.txt"
 
 $Hostnames = @(
   "agent.api5.cursor.sh", "agentn.api5.cursor.sh",
@@ -87,7 +88,15 @@ if ($Uninstall) {
   }
   $current = [Environment]::GetEnvironmentVariable("NODE_EXTRA_CA_CERTS", "User")
   if ($current -eq $CombinedPem) {
-    [Environment]::SetEnvironmentVariable("NODE_EXTRA_CA_CERTS", $null, "User")
+    $restore = ""
+    if (Test-Path $EnvOriginal) { $restore = (Get-Content $EnvOriginal -Raw).Trim() }
+    if ($restore) {
+      [Environment]::SetEnvironmentVariable("NODE_EXTRA_CA_CERTS", $restore, "User")
+      Write-Host ("restored NODE_EXTRA_CA_CERTS = " + $restore)
+    } else {
+      [Environment]::SetEnvironmentVariable("NODE_EXTRA_CA_CERTS", $null, "User")
+      Write-Host "cleared NODE_EXTRA_CA_CERTS (no original value recorded)"
+    }
   }
   Remove-Item $WorkDir -Recurse -Force -ErrorAction SilentlyContinue
   Write-Host "done. restart Cursor."
@@ -111,6 +120,9 @@ Update-Hosts
 
 Write-Host "== 4/4 set NODE_EXTRA_CA_CERTS (merged with any existing bundle)"
 $current = [Environment]::GetEnvironmentVariable("NODE_EXTRA_CA_CERTS", "User")
+if (-not (Test-Path $EnvOriginal)) {
+  Set-Content -Path $EnvOriginal -Value ([string]$current) -Encoding ASCII
+}
 # Keep the user's original CA bundle so re-runs never drop their own roots (e.g. Charles).
 if (-not (Test-Path $BasePem) -and $current -and $current -ne $CombinedPem -and (Test-Path $current)) {
   Copy-Item $current $BasePem -Force
