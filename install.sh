@@ -44,6 +44,12 @@ if [[ "$(id -u)" -ne 0 ]]; then
   SUDO="sudo"
 fi
 
+# When run via sudo, configure the invoking user's desktop session, not root's.
+TARGET_USER="${SUDO_USER:-$(id -un)}"
+TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6 || true)"
+[[ -z "${TARGET_HOME:-}" ]] && TARGET_HOME="$HOME"
+TARGET_UID="$(id -u "$TARGET_USER" 2>/dev/null || id -u)"
+
 HOSTS=/etc/hosts
 [[ -f /private/etc/hosts ]] && HOSTS=/private/etc/hosts
 
@@ -59,7 +65,7 @@ if [[ "$UNINSTALL" == "1" ]]; then
     if command -v update-ca-certificates >/dev/null 2>&1; then $SUDO update-ca-certificates >/dev/null; fi
     if command -v update-ca-trust >/dev/null 2>&1; then $SUDO update-ca-trust >/dev/null; fi
   fi
-  rm -f "$HOME/.config/environment.d/99-cursor-byok.conf"
+  rm -f "$TARGET_HOME/.config/environment.d/99-cursor-byok.conf"
   echo "done. restart Cursor."
   exit 0
 fi
@@ -91,11 +97,16 @@ printf "\n%s\n%s %s\n%s\n" "$MARK_BEGIN" "$PROXY_IP" "$HOSTNAMES" "$MARK_END" | 
 
 echo "== 4/4 export NODE_EXTRA_CA_CERTS for the desktop session"
 CA_PATH=/usr/local/share/ca-certificates/cursor-byok-ca.crt
-[[ "$(uname -s)" == "Darwin" ]] && CA_PATH="$HOME/.cursor-byok-ca.crt" && cp "$TMP_CA" "$CA_PATH"
-mkdir -p "$HOME/.config/environment.d"
-printf "NODE_EXTRA_CA_CERTS=%s\n" "$CA_PATH" > "$HOME/.config/environment.d/99-cursor-byok.conf"
+[[ "$(uname -s)" == "Darwin" ]] && CA_PATH="$TARGET_HOME/.cursor-byok-ca.crt" && cp "$TMP_CA" "$CA_PATH"
+mkdir -p "$TARGET_HOME/.config/environment.d"
+printf "NODE_EXTRA_CA_CERTS=%s\n" "$CA_PATH" > "$TARGET_HOME/.config/environment.d/99-cursor-byok.conf"
+chown -R "$TARGET_USER" "$TARGET_HOME/.config/environment.d" 2>/dev/null || true
 if command -v systemctl >/dev/null 2>&1; then
-  systemctl --user set-environment NODE_EXTRA_CA_CERTS="$CA_PATH" 2>/dev/null || true
+  if [[ -n "${SUDO_USER:-}" && -d "/run/user/$TARGET_UID" ]]; then
+    $SUDO -u "$TARGET_USER" XDG_RUNTIME_DIR="/run/user/$TARGET_UID" systemctl --user set-environment NODE_EXTRA_CA_CERTS="$CA_PATH" 2>/dev/null || true
+  else
+    systemctl --user set-environment NODE_EXTRA_CA_CERTS="$CA_PATH" 2>/dev/null || true
+  fi
 fi
 rm -f "$TMP_CA"
 
