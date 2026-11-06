@@ -120,7 +120,9 @@ $SUDO chown -R "$TARGET_USER" "$TARGET_HOME/.config/environment.d" 2>/dev/null |
 
 if command -v systemctl >/dev/null 2>&1; then
   if [[ -d "/run/user/$TARGET_UID" ]]; then
-    $SUDO -u "$TARGET_USER" XDG_RUNTIME_DIR="/run/user/$TARGET_UID" \
+    $SUDO -u "$TARGET_USER" \
+      XDG_RUNTIME_DIR="/run/user/$TARGET_UID" \
+      DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$TARGET_UID/bus" \
       systemctl --user set-environment NODE_EXTRA_CA_CERTS="$CA_PATH" 2>/dev/null || true
   fi
 fi
