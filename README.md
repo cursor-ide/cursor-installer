@@ -190,9 +190,31 @@ redirect — only the hostname list may need refreshing.
 * **macOS: chat fails but `curl` works** — Cursor was still running when the installer
   set the environment. Quit it (Cmd-Q, not just closing the window) and reopen, or run
   `sudo security add-trusted-cert …` in Terminal.app to trust the CA system-wide.
+* **"Local loop can't run this model … no prompt metadata"** — the account is on Cursor's
+  local agent loop. Select an OpenAI-compatible custom model (see
+  [Model selection](#model-selection-important)); the proxy cannot emulate vendor
+  prompt metadata.
 * **Commands hang / "Running command" forever** — the proxy must fall back from HTTP/2
   shell streaming to plain shell execution for older Cursor builds; make sure you run a
   current proxy image.
+
+## Model selection (important)
+
+The redirect only changes where Cursor sends its agent traffic. Cursor still decides
+*which model* to run, and for some accounts it runs the agent loop locally
+(`agent_host_local_loop`), requesting vendor prompt metadata from the backend. A
+self-hosted proxy cannot provide vendor metadata, so those accounts fail with:
+
+```
+Local loop can't run this model
+The server sent no prompt metadata for "<model>"
+```
+
+Fix: add and select an **OpenAI-compatible custom model** in Cursor
+(Settings → Models → Add model, base URL = your provider, e.g.
+`https://api.example.com/v1`, plus its API key). With a custom model selected,
+Cursor uses the backend loop, and chat plus the tool loop work through the proxy.
+Pick that model in a new chat before testing.
 
 ## Security notes
 
