@@ -5,8 +5,10 @@ without patching Cursor's installation files.
 
 It does two things on the client machine:
 
-1. adds a managed block to the system `hosts` file so Cursor's agent hostnames
-   (`*.api5.cursor.sh`) resolve to your proxy IP;
+1. adds a managed block to the system `hosts` file so every Cursor backend
+   hostname resolves to your proxy IP — agent hosts (`*.api5.cursor.sh`), the
+   account/dashboard host (`api3.cursor.sh`) and the repository hosts
+   (`repo42.cursor.sh`, `api2.cursor.sh`);
 2. installs the proxy's local CA into the OS trust store and exports
    `NODE_EXTRA_CA_CERTS` so Cursor's Node-based agent host trusts the proxy's TLS
    certificate.
@@ -83,7 +85,9 @@ sudo security add-trusted-cert -d -r trustRoot \
 * Outbound HTTPS to the proxy IP.
 * The proxy must be running and serve:
   * `GET /ca.crt` — the CA certificate (plain HTTP on port 80 is fine), and
-  * the agent service over HTTP/2 + TLS on port 443.
+  * every hostname listed below over TLS on port 443, with a server certificate
+    whose SAN list covers those names. Agent, dashboard and repository calls are
+    gRPC and need HTTP/2; see [Backend requirements](#backend-requirements).
 * Administrator/root rights to edit `hosts` and the trust store.
 
 ---
@@ -100,11 +104,14 @@ The hosts entries live between two markers and are rewritten on every run:
 
 ```
 # BEGIN cursor-byok
-<proxy-ip> agent.api5.cursor.sh agentn.api5.cursor.sh ... agentn.global.api5.cursor.sh
+<proxy-ip> agent.api5.cursor.sh ... api3.cursor.sh repo42.cursor.sh api2.cursor.sh
 # END cursor-byok
 ```
 
 Hostnames covered:
+
+**Agent traffic** (`agent.v1.AgentService`, `aiserver.v1.InferenceService`,
+`CmdKService`, Cpp):
 
 * `agent.api5.cursor.sh`, `agentn.api5.cursor.sh`
 * `agent-gcpp-uswest.api5.cursor.sh`, `agentn-gcpp-uswest.api5.cursor.sh`
@@ -113,22 +120,95 @@ Hostnames covered:
 * `agentn-gcpp-uswest.global.api5.cursor.sh`, `agent-gcpp-uswest.global.api5.cursor.sh`
 * `agentn-gcpp-eucentral.global.api5.cursor.sh`, `agentn-gcpp-apsoutheast.global.api5.cursor.sh`
 
+**Account / membership / usage** (`aiserver.v1.DashboardService`: `GetMe`,
+`GetPlanInfo`, `GetCurrentPeriodUsage`, `GetHardLimit`, `GetMonthlyBillingCycle`,
+`GetTeams`, `GetUserPrivacyMode`, `GetUsageBasedPremiumRequests`):
+
+* `api3.cursor.sh`
+
+Some builds also send telemetry (`AnalyticsService`, `MetricsService`) to `api3`;
+the backend does not implement those RPCs, so proxy logs will show
+unimplemented-method errors for them.
+
+**Repository ingestion** (`aiserver.v1.RepositoryService`):
+
+* `repo42.cursor.sh` (primary, HTTP/2 gRPC)
+* `api2.cursor.sh` (the retrieval extension's HTTP/1.1 fallback)
+
+---
+
+## Backend requirements
+
+### Certificate and SANs
+
+The server certificate must include a SAN for every hostname above. In
+`cursor-backend`, `tools/vps/deploy-vps.sh` writes `san.cnf` with `api2`, `api3`,
+`api4`, `repo42`, `*.api5.cursor.sh`, `*.global.api5.cursor.sh` and the proxy IP, so
+re-running that script is enough to cover the new names. The CA is only created
+when `/etc/nginx/ssl/cursor/ca.key` is absent; the server key and certificate are
+reissued on every run. Remove or rotate `ca.key` to mint a new CA, then re-run
+this installer on every client. Certs are not per-name — there is one SAN
+certificate for all names. It is issued for 3650 days, so no scheduled renewal is
+required; rotate manually before expiry.
+
+### HTTP/2 vs HTTP/1.1
+
+* Agent, inference, CmdK, DashboardService and RepositoryService traffic is gRPC
+  and must reach the backend over HTTP/2 (`listen 443 ssl http2` + `grpc_pass`).
+* `repo42.cursor.sh` is the repository path that must work; it uses HTTP/2.
+* `api2.cursor.sh` is only the extension's HTTP/1.1 fallback. nginx `grpc_pass`
+  accepts HTTP/2 only, so the fallback cannot use the same location: it needs a
+  separate `proxy_pass http://127.0.0.1:8099` location (with
+  `proxy_http_version 1.1`) if the backend accepts HTTP/1.1 there. If it does not,
+  repository ingestion still works over `repo42.cursor.sh`, and only the fallback
+  path is unavailable.
+
+### Environment (proxy host)
+
+* `REPO_STORE_DIR` — directory where the backend stores repository snapshots and
+  index state. Create it writable by the proxy container/user and keep it on a
+  persistent volume so indexes survive container restarts.
+* `PROXY_TOKEN` — shared secret checked by the backend (`x-proxy-token`). Cursor
+  cannot add that header, so when it is set nginx must inject it upstream:
+  `grpc_set_header x-proxy-token <value>;` (or the backend must exempt the client
+  path). Never put the token in this repository or in a client installer.
+
+Both variables belong to the backend deployment, not to the client machine.
+
 ---
 
 ## Verify
 
-After restarting Cursor, open a chat and send a message. On the proxy you should see
-`POST /agent.v1.AgentService/Run` and the model being proxied.
+Preview without changing anything (lists every redirected host, the hosts file and
+the CA path):
 
-The installer ends with its own checks: DNS resolution, a TLS request with the installed
-CA, and (on macOS) a request made by Cursor's own Electron/Node runtime, which is the
-process that actually calls the proxy.
+```bash
+# Linux / macOS
+curl -fsSL https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.1.0/install.sh | sudo bash -s -- --dry-run
+```
+
+```powershell
+# Windows
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.1.0/install.ps1))) -DryRun
+```
+
+After restarting Cursor, open a chat and send a message. On the proxy you should see
+`POST /agent.v1.AgentService/Run` and the model being proxied. Account and repository
+calls appear as `DashboardService` and `RepositoryService` RPCs.
+
+The installer ends with its own checks: DNS resolution for every redirected host,
+TLS requests (with the installed CA) to one representative each for agent, dashboard
+and repository traffic, and (on macOS) a request made by Cursor's own Electron/Node
+runtime, which is the process that actually calls the proxy.
 
 Manual check (Linux/macOS):
 
 ```bash
 getent hosts agentn.global.api5.cursor.sh     # Linux; macOS: dscacheutil -q host -a name agentn.global.api5.cursor.sh
 curl -sS --cacert ~/.cursor-byok-ca.crt https://agentn.global.api5.cursor.sh/ -o /dev/null -w '%{http_code}\n'
+# new names — TLS SAN check proves the cert covers them
+curl -sS --http2 --cacert ~/.cursor-byok-ca.crt https://api3.cursor.sh/ -o /dev/null -w '%{http_code}\n'
+curl -sS --http2 --cacert ~/.cursor-byok-ca.crt https://repo42.cursor.sh/ -o /dev/null -w '%{http_code}\n'
 # macOS: prove Cursor's runtime trusts the CA
 NODE_EXTRA_CA_CERTS=~/.cursor-byok-ca.crt ELECTRON_RUN_AS_NODE=1 \
   /Applications/Cursor.app/Contents/MacOS/Cursor -e \

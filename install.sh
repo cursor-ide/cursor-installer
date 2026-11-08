@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # cursor-byok bootstrap (Linux + macOS).
-# Installs a local CA and redirects Cursor's agent hostnames to your own backend.
+# Installs a local CA and redirects every Cursor backend hostname (agent, account
+# dashboard and repository ingestion) to your own backend.
 #
 #   curl -fsSL https://raw.githubusercontent.com/cursor-ide/cursor-installer/main/install.sh | sudo bash
 #   curl -fsSL ... | sudo bash -s -- --ip 1.2.3.4
@@ -22,7 +23,7 @@ cursor-byok installer (Linux/macOS)
   --ca-url <url>   CA download URL (default ${CA_URL})
   --user <name>    desktop user to configure (default: sudo caller)
   --uninstall      remove hosts block, CA and env
-  --dry-run        print what would change, do nothing
+  --dry-run        list every redirected host and the CA path, change nothing
   --help           this help
 EOF
 }
@@ -45,12 +46,21 @@ case "$OS" in
   *) echo "unsupported OS: $OS" >&2; exit 1 ;;
 esac
 
-HOSTNAMES="agent.api5.cursor.sh agentn.api5.cursor.sh \
+# Agent traffic (agent.v1.AgentService, inference, CmdK/Cpp).
+AGENT_HOSTNAMES="agent.api5.cursor.sh agentn.api5.cursor.sh \
 agent-gcpp-uswest.api5.cursor.sh agentn-gcpp-uswest.api5.cursor.sh \
 agentn-gcpp-eucentral.api5.cursor.sh agentn-gcpp-apsoutheast.api5.cursor.sh \
 agent.global.api5.cursor.sh agentn.global.api5.cursor.sh \
 agentn-gcpp-uswest.global.api5.cursor.sh agent-gcpp-uswest.global.api5.cursor.sh \
 agentn-gcpp-eucentral.global.api5.cursor.sh agentn-gcpp-apsoutheast.global.api5.cursor.sh"
+
+# Account/membership dashboard (api3), repository ingestion (repo42) and the
+# extension's HTTP/1.1 fallback host (api2).
+API_HOSTNAMES="api3.cursor.sh repo42.cursor.sh api2.cursor.sh"
+
+HOSTNAMES="$AGENT_HOSTNAMES $API_HOSTNAMES"
+# shellcheck disable=SC2086  # intentional word splitting of the hostname list
+HOST_COUNT=$(printf '%s\n' $HOSTNAMES | wc -w | tr -d ' ')
 
 SUDO=""
 if [[ "$(id -u)" -ne 0 ]]; then SUDO="sudo"; fi
@@ -133,6 +143,10 @@ trust_ca_linux() {
 }
 
 trust_ca_macos() {
+  if [[ "$DRY_RUN" == "1" ]]; then
+    echo "   [dry-run] trust CA in the System keychain"
+    return 0
+  fi
   # Only works when macOS can show an authorization prompt (Desktop login window or
   # Terminal.app). Over plain SSH the Security framework denies it, so treat this as
   # best effort: Cursor's agent host is a Node process and trusts NODE_EXTRA_CA_CERTS.
@@ -267,8 +281,27 @@ fi
 echo "== 1/4 download CA"
 TMP_CA="$(mktemp)"
 trap 'rm -f "$TMP_CA"' EXIT
-curl -fsSL "$CA_URL" -o "$TMP_CA"
-openssl x509 -in "$TMP_CA" -noout -subject -enddate 2>/dev/null | sed 's/^/   /' || true
+
+print_plan() {
+  echo "== redirect plan"
+  # shellcheck disable=SC2086
+  for h in $HOSTNAMES; do
+    printf '   %-42s -> %s\n' "$h" "$PROXY_IP"
+  done
+  echo "   hosts file: $HOSTS"
+  echo "   CA source:  $CA_URL"
+  echo "   CA target:  $CA_FILE_USER"
+  echo "   note: repository traffic (repo42) is gRPC over HTTP/2; api2 is the"
+  echo "         extension's HTTP/1.1 fallback host and is redirected too."
+}
+
+if [[ "$DRY_RUN" == "1" ]]; then
+  print_plan
+  echo "   [dry-run] download $CA_URL -> $CA_FILE_USER (skipped)"
+else
+  curl -fsSL "$CA_URL" -o "$TMP_CA"
+  openssl x509 -in "$TMP_CA" -noout -subject -enddate 2>/dev/null | sed 's/^/   /' || true
+fi
 
 echo "== 2/4 install CA into system trust store"
 case "$OS" in
@@ -283,10 +316,10 @@ else
   $SUDO chmod 644 "$CA_FILE_USER"
 fi
 
-echo "== 3/4 point Cursor agent hosts to $PROXY_IP"
+echo "== 3/4 point Cursor backend hosts to $PROXY_IP"
 strip_block
 if [[ "$DRY_RUN" == "1" ]]; then
-  echo "  [dry-run] append hosts block for 12 hostnames to $HOSTS"
+  echo "   [dry-run] append hosts block for $HOST_COUNT hostnames to $HOSTS"
 else
   printf "\n%s\n%s %s\n%s\n" "$MARK_BEGIN" "$PROXY_IP" "$HOSTNAMES" "$MARK_END" | $SUDO tee -a "$HOSTS" >/dev/null
 fi
@@ -301,20 +334,39 @@ esac
 echo
 echo "== verify"
 if [[ "$DRY_RUN" == "1" ]]; then
-  echo "  [dry-run] skipped"
+  echo "   [dry-run] skipped; plan above lists every redirected host and the CA path"
 else
-  if command -v getent >/dev/null 2>&1; then
-    getent hosts agentn.global.api5.cursor.sh | sed 's/^/   dns: /' || true
-  else
-    dscacheutil -q host -a name agentn.global.api5.cursor.sh | sed 's/^/   dns: /' || true
-  fi
-  if curl -sS --max-time 10 --resolve "agentn.global.api5.cursor.sh:443:${PROXY_IP}" \
-      --cacert "$CA_FILE_USER" "https://agentn.global.api5.cursor.sh/" -o /dev/null \
-      -w '   tls: %{http_code} (proxy + CA chain)\n' 2>/dev/null; then
-    :
-  else
-    echo "   tls: curl failed — check that the proxy is up and serving 443"
-  fi
+  ok=0
+  bad=0
+  # shellcheck disable=SC2086
+  for h in $HOSTNAMES; do
+    if command -v getent >/dev/null 2>&1; then
+      ip="$(getent hosts "$h" 2>/dev/null | awk 'NR==1{print $1}')"
+    else
+      ip="$(dscacheutil -q host -a name "$h" 2>/dev/null | awk '/ip_address:/{print $2; exit}')"
+    fi
+    if [[ "$ip" == "$PROXY_IP" ]]; then
+      printf '   dns: %-42s -> %s\n' "$h" "$ip"
+      ok=$((ok+1))
+    else
+      printf '   dns: %-42s -> %s (expected %s)\n' "$h" "${ip:-none}" "$PROXY_IP"
+      bad=$((bad+1))
+    fi
+  done
+  echo "   dns: $ok/$HOST_COUNT hostnames redirected, $bad mismatched"
+
+  # One representative per traffic class. curl validates the server cert SAN
+  # against the installed CA, so this also proves the cert covers the new names.
+  for h in agentn.global.api5.cursor.sh api3.cursor.sh repo42.cursor.sh; do
+    code="$(curl -sS --http2 --max-time 10 --resolve "$h:443:${PROXY_IP}" \
+      --cacert "$CA_FILE_USER" "https://$h/" -o /dev/null \
+      -w '%{http_code}' 2>/dev/null || echo failed)"
+    if [[ "$code" == "failed" ]]; then
+      echo "   tls: $h FAILED — cert SAN/CA chain or HTTP/2 handshake"
+    else
+      echo "   tls: $h ok (http/2, SAN + CA chain, status $code)"
+    fi
+  done
   # Cursor's agent host is a Node process. Prove that its own runtime trusts the CA
   # even when the System keychain could not be touched (headless install).
   if [[ "$OS" == "Darwin" && -x /Applications/Cursor.app/Contents/MacOS/Cursor ]]; then

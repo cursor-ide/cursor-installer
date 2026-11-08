@@ -7,11 +7,13 @@
   Optional:
     & ([scriptblock]::Create((irm ...))) -Ip 1.2.3.4
     & ([scriptblock]::Create((irm ...))) -Uninstall
+    & ([scriptblock]::Create((irm ...))) -DryRun
 #>
 param(
   [string]$Ip = $(if ($env:CURSOR_PROXY_IP) { $env:CURSOR_PROXY_IP } else { "203.0.113.10" }),
   [string]$CaUrl = "",
-  [switch]$Uninstall
+  [switch]$Uninstall,
+  [switch]$DryRun
 )
 
 $ErrorActionPreference = "Stop"
@@ -30,13 +32,30 @@ $Hostnames = @(
   "agentn-gcpp-eucentral.api5.cursor.sh", "agentn-gcpp-apsoutheast.api5.cursor.sh",
   "agent.global.api5.cursor.sh", "agentn.global.api5.cursor.sh",
   "agentn-gcpp-uswest.global.api5.cursor.sh", "agent-gcpp-uswest.global.api5.cursor.sh",
-  "agentn-gcpp-eucentral.global.api5.cursor.sh", "agentn-gcpp-apsoutheast.global.api5.cursor.sh"
+  "agentn-gcpp-eucentral.global.api5.cursor.sh", "agentn-gcpp-apsoutheast.global.api5.cursor.sh",
+  # Account/membership dashboard, repository ingestion, HTTP/1.1 fallback.
+  "api3.cursor.sh", "repo42.cursor.sh", "api2.cursor.sh"
 )
+
+$url = if ($CaUrl) { $CaUrl } else { "http://$Ip/ca.crt" }
 
 function Test-Admin {
   $id = [Security.Principal.WindowsIdentity]::GetCurrent()
   $pr = New-Object Security.Principal.WindowsPrincipal($id)
   return $pr.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+if ($DryRun) {
+  Write-Host "== redirect plan"
+  foreach ($h in $Hostnames) {
+    Write-Host ("   {0,-42} -> {1}" -f $h, $Ip)
+  }
+  Write-Host ("   hosts file: " + $HostsPath)
+  Write-Host ("   CA source:  " + $url)
+  Write-Host ("   CA target:  " + $CaFile)
+  Write-Host "   note: repository traffic (repo42) is gRPC over HTTP/2; api2 is the"
+  Write-Host "         extension's HTTP/1.1 fallback host and is redirected too."
+  return
 }
 
 if (-not (Test-Admin)) {
@@ -103,8 +122,6 @@ if ($Uninstall) {
   return
 }
 
-$url = if ($CaUrl) { $CaUrl } else { "http://$Ip/ca.crt" }
-
 Write-Host "== 1/4 download CA from $url"
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 Invoke-WebRequest -Uri $url -OutFile $CaFile -UseBasicParsing
@@ -115,7 +132,7 @@ $caCert = New-Object System.Security.Cryptography.X509Certificates.X509Certifica
 Set-Content -Path (Join-Path $WorkDir "thumbprint.txt") -Value $caCert.Thumbprint -Encoding ASCII
 Write-Host ("   installed thumbprint " + $caCert.Thumbprint)
 
-Write-Host "== 3/4 point Cursor agent hosts to $Ip"
+Write-Host "== 3/4 point Cursor backend hosts to $Ip"
 Update-Hosts
 
 Write-Host "== 4/4 set NODE_EXTRA_CA_CERTS (merged with any existing bundle)"
