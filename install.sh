@@ -8,8 +8,8 @@
 #   curl -fsSL ... | sudo bash -s -- --uninstall
 set -euo pipefail
 
-PROXY_IP="${CURSOR_PROXY_IP:-203.0.113.10}"
-CA_URL="${CURSOR_CA_URL:-http://${PROXY_IP}/ca.crt}"
+PROXY_IP="${CURSOR_PROXY_IP:-}"
+CA_URL="${CURSOR_CA_URL:-}"
 MARK_BEGIN="# BEGIN cursor-byok"
 MARK_END="# END cursor-byok"
 UNINSTALL=0
@@ -19,8 +19,8 @@ DRY_RUN=0
 usage() {
   cat <<EOF
 cursor-byok installer (Linux/macOS)
-  --ip <addr>      proxy IP (default ${PROXY_IP})
-  --ca-url <url>   CA download URL (default ${CA_URL})
+  --ip <addr>      proxy IP (required unless CURSOR_PROXY_IP is set)
+  --ca-url <url>   CA download URL (default http://<ip>/ca.crt)
   --user <name>    desktop user to configure (default: sudo caller)
   --uninstall      remove hosts block, CA and env
   --dry-run        list every redirected host and the CA path, change nothing
@@ -39,6 +39,15 @@ while [[ $# -gt 0 ]]; do
     *) echo "unknown option: $1" >&2; usage; exit 2 ;;
   esac
 done
+
+if [[ -z "$PROXY_IP" && "$UNINSTALL" != "1" ]]; then
+  echo "error: set --ip <addr> or CURSOR_PROXY_IP (no default IP in the repo)" >&2
+  usage
+  exit 2
+fi
+if [[ -z "$CA_URL" && -n "$PROXY_IP" ]]; then
+  CA_URL="http://${PROXY_IP}/ca.crt"
+fi
 
 OS="$(uname -s)"
 case "$OS" in

@@ -10,11 +10,15 @@
     & ([scriptblock]::Create((irm ...))) -DryRun
 #>
 param(
-  [string]$Ip = $(if ($env:CURSOR_PROXY_IP) { $env:CURSOR_PROXY_IP } else { "203.0.113.10" }),
+  [string]$Ip = $(if ($env:CURSOR_PROXY_IP) { $env:CURSOR_PROXY_IP } else { "" }),
   [string]$CaUrl = "",
   [switch]$Uninstall,
   [switch]$DryRun
 )
+
+if (-not $Uninstall -and [string]::IsNullOrWhiteSpace($Ip)) {
+  throw "Set -Ip <addr> or env CURSOR_PROXY_IP (no default IP in the repo)."
+}
 
 $ErrorActionPreference = "Stop"
 $MarkBegin = "# BEGIN cursor-byok"
