@@ -37,8 +37,10 @@ $Hostnames = @(
   "agent.global.api5.cursor.sh", "agentn.global.api5.cursor.sh",
   "agentn-gcpp-uswest.global.api5.cursor.sh", "agent-gcpp-uswest.global.api5.cursor.sh",
   "agentn-gcpp-eucentral.global.api5.cursor.sh", "agentn-gcpp-apsoutheast.global.api5.cursor.sh",
-  # Account/membership dashboard, repository ingestion, HTTP/1.1 fallback.
-  "api3.cursor.sh", "repo42.cursor.sh", "api2.cursor.sh"
+  # Repository ingestion and the extension's HTTP/1.1 fallback.
+  "repo42.cursor.sh", "api2.cursor.sh",
+  # Telemetry (AnalyticsService, MetricsService, TraceService) — telemBackendUrl.
+  "api3.cursor.sh"
 )
 
 $url = if ($CaUrl) { $CaUrl } else { "http://$Ip/ca.crt" }

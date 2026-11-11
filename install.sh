@@ -63,11 +63,15 @@ agent.global.api5.cursor.sh agentn.global.api5.cursor.sh \
 agentn-gcpp-uswest.global.api5.cursor.sh agent-gcpp-uswest.global.api5.cursor.sh \
 agentn-gcpp-eucentral.global.api5.cursor.sh agentn-gcpp-apsoutheast.global.api5.cursor.sh"
 
-# Account/membership dashboard (api3), repository ingestion (repo42) and the
-# extension's HTTP/1.1 fallback host (api2).
-API_HOSTNAMES="api3.cursor.sh repo42.cursor.sh api2.cursor.sh"
+# Account dashboard is api3 as well, but telemetry is listed on its own so a
+# client install always points AnalyticsService / MetricsService / TraceService
+# (telemBackendUrl in Cursor 3.29) at this proxy.
+TELEMETRY_HOSTNAMES="api3.cursor.sh"
 
-HOSTNAMES="$AGENT_HOSTNAMES $API_HOSTNAMES"
+# Repository ingestion (repo42) and the extension's HTTP/1.1 fallback (api2).
+API_HOSTNAMES="repo42.cursor.sh api2.cursor.sh"
+
+HOSTNAMES="$AGENT_HOSTNAMES $API_HOSTNAMES $TELEMETRY_HOSTNAMES"
 # shellcheck disable=SC2086  # intentional word splitting of the hostname list
 HOST_COUNT=$(printf '%s\n' $HOSTNAMES | wc -w | tr -d ' ')
 
@@ -149,6 +153,55 @@ trust_ca_linux() {
   elif command -v update-ca-trust >/dev/null 2>&1; then
     run $SUDO update-ca-trust >/dev/null
   fi
+}
+
+# Cursor's window is Chromium. It does not use the system CA store or
+# NODE_EXTRA_CA_CERTS; it trusts roots in the desktop user's NSS database.
+NSS_NICK="Cursor Local CA"
+
+ensure_certutil() {
+  command -v certutil >/dev/null 2>&1 && return 0
+  if [[ "$DRY_RUN" == "1" ]]; then
+    echo "   [dry-run] certutil missing; would install libnss3-tools when apt-get is available"
+    return 0
+  fi
+  if command -v apt-get >/dev/null 2>&1; then
+    echo "   installing libnss3-tools so the Cursor window trusts the CA"
+    $SUDO apt-get update -qq || true
+    $SUDO apt-get install -y -qq libnss3-tools || true
+  fi
+  command -v certutil >/dev/null 2>&1
+}
+
+trust_ca_nss() {
+  local db="${TARGET_HOME}/.pki/nssdb"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    echo "   [dry-run] import CA into $db (Cursor/Chromium NSS)"
+    return 0
+  fi
+  if ! ensure_certutil; then
+    echo "   ! certutil missing. The Cursor window ignores the system CA store."
+    echo "     Install libnss3-tools, then re-run this script."
+    return 0
+  fi
+  as_user mkdir -p "$db"
+  if [[ ! -e "$db/cert9.db" ]]; then
+    as_user certutil -d "sql:$db" -N --empty-password
+  fi
+  as_user certutil -d "sql:$db" -D -n "$NSS_NICK" >/dev/null 2>&1 || true
+  as_user certutil -d "sql:$db" -A -t "C,," -n "$NSS_NICK" -i "$CA_FILE_USER"
+  echo "   imported into the user NSS database (Cursor window)"
+}
+
+untrust_ca_nss() {
+  local db="${TARGET_HOME}/.pki/nssdb"
+  [[ -e "$db/cert9.db" || -e "$db/cert8.db" ]] || return 0
+  command -v certutil >/dev/null 2>&1 || return 0
+  if [[ "$DRY_RUN" == "1" ]]; then
+    echo "  [dry-run] remove $NSS_NICK from $db"
+    return 0
+  fi
+  as_user certutil -d "sql:$db" -D -n "$NSS_NICK" >/dev/null 2>&1 || true
 }
 
 trust_ca_macos() {
@@ -275,6 +328,7 @@ if [[ "$UNINSTALL" == "1" ]]; then
         if command -v update-ca-certificates >/dev/null 2>&1; then run $SUDO update-ca-certificates >/dev/null; fi
         if command -v update-ca-trust >/dev/null 2>&1; then run $SUDO update-ca-trust >/dev/null; fi
       fi
+      untrust_ca_nss
       run rm -f "$ENV_DIR_CONF"
       ;;
     Darwin)
@@ -323,6 +377,9 @@ else
   $SUDO cp "$TMP_CA" "$CA_FILE_USER"
   $SUDO chown "$TARGET_USER" "$CA_FILE_USER"
   $SUDO chmod 644 "$CA_FILE_USER"
+fi
+if [[ "$OS" == "Linux" ]]; then
+  trust_ca_nss
 fi
 
 echo "== 3/4 point Cursor backend hosts to $PROXY_IP"
@@ -378,14 +435,29 @@ else
   done
   # Cursor's agent host is a Node process. Prove that its own runtime trusts the CA
   # even when the System keychain could not be touched (headless install).
+  cursor_bin=""
   if [[ "$OS" == "Darwin" && -x /Applications/Cursor.app/Contents/MacOS/Cursor ]]; then
+    cursor_bin="/Applications/Cursor.app/Contents/MacOS/Cursor"
+  elif [[ "$OS" == "Linux" ]]; then
+    for c in /usr/share/cursor/cursor /usr/bin/cursor; do
+      [[ -x "$c" ]] && cursor_bin="$c" && break
+    done
+  fi
+  if [[ -n "$cursor_bin" ]]; then
     probe='const https=require("https");const r=https.get("https://agentn.api5.cursor.sh/",{timeout:8000},(x)=>{console.log(x.statusCode);process.exit(0)});r.on("error",e=>{console.log(e.code||e.message);process.exit(1)});r.on("timeout",()=>{console.log("timeout");process.exit(1)})'
     out=$(NODE_EXTRA_CA_CERTS="$CA_FILE_USER" ELECTRON_RUN_AS_NODE=1 \
-      /Applications/Cursor.app/Contents/MacOS/Cursor -e "$probe" 2>/dev/null || true)
+      "$cursor_bin" -e "$probe" 2>/dev/null || true)
     case "$out" in
       404|200) echo "   cursor runtime: node TLS ok ($out)" ;;
       *) echo "   cursor runtime: TLS failed (${out:-no output}) — Cursor will not reach the proxy" ;;
     esac
+  fi
+  if [[ "$OS" == "Linux" ]] && command -v certutil >/dev/null 2>&1; then
+    if as_user certutil -d "sql:${TARGET_HOME}/.pki/nssdb" -L -n "$NSS_NICK" >/dev/null 2>&1; then
+      echo "   nss: $NSS_NICK is a trusted CA in the user NSS database"
+    else
+      echo "   nss: $NSS_NICK missing — the Cursor window will reject the proxy certificate"
+    fi
   fi
 fi
 
@@ -398,5 +470,6 @@ if [[ "$OS" == "Darwin" ]]; then
   echo "Quit and reopen Cursor (Cmd-Q, then launch it again)."
 else
   echo "Log out/in (or reboot) so GUI apps inherit NODE_EXTRA_CA_CERTS, then restart Cursor."
+  echo "The Cursor window trusts this CA via the user NSS database; restart Cursor after install."
 fi
 echo "Revert: sudo bash install.sh --uninstall"

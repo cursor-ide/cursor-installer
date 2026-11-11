@@ -127,11 +127,10 @@ Hostnames covered:
 `GetPlanInfo`, `GetCurrentPeriodUsage`, `GetHardLimit`, `GetMonthlyBillingCycle`,
 `GetTeams`, `GetUserPrivacyMode`, `GetUsageBasedPremiumRequests`):
 
-* `api3.cursor.sh`
-
-Some builds also send telemetry (`AnalyticsService`, `MetricsService`) to `api3`;
-the backend does not implement those RPCs, so proxy logs will show
-unimplemented-method errors for them.
+* `api3.cursor.sh` — also the telemetry host (`telemBackendUrl`: `AnalyticsService`,
+  `MetricsService`, `TraceService`, `SubmitLogs`). The hosts block points it at
+  the proxy on purpose. Those RPCs are not implemented; the proxy log line
+  includes `rpc=… telemetry=1` so a client error can be tied to the request.
 
 **Repository ingestion** (`aiserver.v1.RepositoryService`):
 
