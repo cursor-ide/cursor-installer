@@ -5,10 +5,10 @@ without patching Cursor's installation files.
 
 It does two things on the client machine:
 
-1. adds a managed block to the system `hosts` file so every Cursor backend
-   hostname resolves to your proxy IP — agent hosts (`*.api5.cursor.sh`), the
-   account/dashboard host (`api3.cursor.sh`) and the repository hosts
-   (`repo42.cursor.sh`, `api2.cursor.sh`);
+1. adds a managed block to the system `hosts` file so Cursor agent hostnames
+   resolve to your proxy IP — agent hosts (`*.api5.cursor.sh`), telemetry
+   (`api3.cursor.sh`) and repository ingestion (`repo42.cursor.sh`).
+   `api2.cursor.sh` is not redirected: Plan & Usage still calls Cursor origin;
 2. installs the proxy's local CA into the OS trust store and exports
    `NODE_EXTRA_CA_CERTS` so Cursor's Node-based agent host trusts the proxy's TLS
    certificate.
@@ -107,9 +107,14 @@ The hosts entries live between two markers and are rewritten on every run:
 
 ```
 # BEGIN cursor-byok
-<proxy-ip> agent.api5.cursor.sh ... api3.cursor.sh repo42.cursor.sh api2.cursor.sh
+# api2.cursor.sh is not redirected: Plan & Usage still calls Cursor origin.
+<proxy-ip> agent.api5.cursor.sh ...            # at most 9 names per line
+<proxy-ip> ... repo42.cursor.sh api3.cursor.sh
 # END cursor-byok
 ```
+
+Windows applies only the first 9 names on a hosts line and ignores the rest.
+The installer writes one IP line per 9 names, on every platform.
 
 Hostnames covered:
 
@@ -123,19 +128,22 @@ Hostnames covered:
 * `agentn-gcpp-uswest.global.api5.cursor.sh`, `agent-gcpp-uswest.global.api5.cursor.sh`
 * `agentn-gcpp-eucentral.global.api5.cursor.sh`, `agentn-gcpp-apsoutheast.global.api5.cursor.sh`
 
-**Account / membership / usage** (`aiserver.v1.DashboardService`: `GetMe`,
-`GetPlanInfo`, `GetCurrentPeriodUsage`, `GetHardLimit`, `GetMonthlyBillingCycle`,
-`GetTeams`, `GetUserPrivacyMode`, `GetUsageBasedPremiumRequests`):
+**Plan & Usage** (`aiserver.v1.DashboardService`, including `GetCurrentPeriodUsage`):
 
-* `api3.cursor.sh` — also the telemetry host (`telemBackendUrl`: `AnalyticsService`,
-  `MetricsService`, `TraceService`, `SubmitLogs`). The hosts block points it at
-  the proxy on purpose. Those RPCs are not implemented; the proxy log line
-  includes `rpc=… telemetry=1` so a client error can be tied to the request.
+* `api2.cursor.sh` — left on Cursor origin. `api2geo.cursor.sh` and
+  `api2direct.cursor.sh` are not listed either, so the settings meter still
+  shows the real Cursor plan. The proxy does not implement this surface yet.
+
+**Telemetry** (`telemBackendUrl`: `AnalyticsService`, `MetricsService`,
+`TraceService`, `SubmitLogs`):
+
+* `api3.cursor.sh` — pointed at the proxy. Those RPCs are not implemented; the
+  proxy log line includes `rpc=… telemetry=1` so a client error can be tied to
+  the request.
 
 **Repository ingestion** (`aiserver.v1.RepositoryService`):
 
-* `repo42.cursor.sh` (primary, HTTP/2 gRPC)
-* `api2.cursor.sh` (the retrieval extension's HTTP/1.1 fallback)
+* `repo42.cursor.sh` (HTTP/2 gRPC)
 
 ---
 
@@ -155,15 +163,11 @@ required; rotate manually before expiry.
 
 ### HTTP/2 vs HTTP/1.1
 
-* Agent, inference, CmdK, DashboardService and RepositoryService traffic is gRPC
-  and must reach the backend over HTTP/2 (`listen 443 ssl http2` + `grpc_pass`).
+* Agent, inference, CmdK and RepositoryService traffic is gRPC and must reach
+  the backend over HTTP/2 (`listen 443 ssl http2` + `grpc_pass`).
 * `repo42.cursor.sh` is the repository path that must work; it uses HTTP/2.
-* `api2.cursor.sh` is only the extension's HTTP/1.1 fallback. nginx `grpc_pass`
-  accepts HTTP/2 only, so the fallback cannot use the same location: it needs a
-  separate `proxy_pass http://127.0.0.1:8099` location (with
-  `proxy_http_version 1.1`) if the backend accepts HTTP/1.1 there. If it does not,
-  repository ingestion still works over `repo42.cursor.sh`, and only the fallback
-  path is unavailable.
+* `api2.cursor.sh` is not in the hosts block. Plan & Usage keeps calling Cursor
+  origin until that API is implemented on the proxy.
 
 ### Environment (proxy host)
 
@@ -196,8 +200,9 @@ curl -fsSL https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.1.1/
 ```
 
 After restarting Cursor, open a chat and send a message. On the proxy you should see
-`POST /agent.v1.AgentService/Run` and the model being proxied. Account and repository
-calls appear as `DashboardService` and `RepositoryService` RPCs.
+`POST /agent.v1.AgentService/Run` and the model being proxied. Repository calls
+appear as `RepositoryService` RPCs. Plan & Usage stays on Cursor (`api2.cursor.sh`)
+and does not show up in the proxy log.
 
 The installer ends with its own checks: DNS resolution for every redirected host,
 TLS requests (with the installed CA) to one representative each for agent, dashboard
@@ -265,8 +270,10 @@ redirect — only the hostname list may need refreshing.
 * **Cursor shows "Agent and Edit rely on custom models that require a paid subscription"**
   — traffic is still reaching Cursor. Check that every agent hostname resolves to the
   proxy (`Resolve-DnsName agentn.global.api5.cursor.sh` on Windows,
-  `getent hosts agentn.global.api5.cursor.sh` on Linux). New Cursor versions may add
-  hostnames; update the `Hostnames` list and re-run the installer.
+  `getent hosts agentn.global.api5.cursor.sh` on Linux). On Windows, only the first
+  9 names on a hosts line are applied; keep the managed block split that way.
+  New Cursor versions may add hostnames; update the `Hostnames` list and re-run
+  the installer.
 * **TLS error `self signed certificate in certificate chain`** — the CA is not trusted by
   the process. Re-run the installer and restart Cursor from a session that has
   `NODE_EXTRA_CA_CERTS` (log out/in on Linux; on macOS check

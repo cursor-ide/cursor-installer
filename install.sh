@@ -63,13 +63,15 @@ agent.global.api5.cursor.sh agentn.global.api5.cursor.sh \
 agentn-gcpp-uswest.global.api5.cursor.sh agent-gcpp-uswest.global.api5.cursor.sh \
 agentn-gcpp-eucentral.global.api5.cursor.sh agentn-gcpp-apsoutheast.global.api5.cursor.sh"
 
-# Account dashboard is api3 as well, but telemetry is listed on its own so a
-# client install always points AnalyticsService / MetricsService / TraceService
-# (telemBackendUrl in Cursor 3.29) at this proxy.
+# Telemetry (AnalyticsService, MetricsService, TraceService) — telemBackendUrl.
+# Plan & Usage is api2 and is intentionally not in this list.
 TELEMETRY_HOSTNAMES="api3.cursor.sh"
 
-# Repository ingestion (repo42) and the extension's HTTP/1.1 fallback (api2).
-API_HOSTNAMES="repo42.cursor.sh api2.cursor.sh"
+# Repository ingestion (repo42). api2.cursor.sh is omitted on purpose: Plan & Usage
+# (DashboardService/GetCurrentPeriodUsage) still calls Cursor origin.
+API_HOSTNAMES="repo42.cursor.sh"
+# Windows DNS client applies only the first 9 names on a single hosts line.
+HOSTS_PER_LINE=9
 
 HOSTNAMES="$AGENT_HOSTNAMES $API_HOSTNAMES $TELEMETRY_HOSTNAMES"
 # shellcheck disable=SC2086  # intentional word splitting of the hostname list
@@ -354,8 +356,8 @@ print_plan() {
   echo "   hosts file: $HOSTS"
   echo "   CA source:  $CA_URL"
   echo "   CA target:  $CA_FILE_USER"
-  echo "   note: repository traffic (repo42) is gRPC over HTTP/2; api2 is the"
-  echo "         extension's HTTP/1.1 fallback host and is redirected too."
+  echo "   note: Windows applies only $HOSTS_PER_LINE names per hosts line; the block is split."
+  echo "   note: api2.cursor.sh is not redirected. Plan & Usage still calls Cursor origin."
 }
 
 if [[ "$DRY_RUN" == "1" ]]; then
@@ -387,7 +389,19 @@ strip_block
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "   [dry-run] append hosts block for $HOST_COUNT hostnames to $HOSTS"
 else
-  printf "\n%s\n%s %s\n%s\n" "$MARK_BEGIN" "$PROXY_IP" "$HOSTNAMES" "$MARK_END" | $SUDO tee -a "$HOSTS" >/dev/null
+  {
+    printf '\n%s\n' "$MARK_BEGIN"
+    printf '%s\n' "# api2.cursor.sh is not redirected: Plan & Usage still calls Cursor origin."
+    # shellcheck disable=SC2086
+    names=($HOSTNAMES)
+    i=0
+    while [[ $i -lt ${#names[@]} ]]; do
+      chunk=("${names[@]:$i:$HOSTS_PER_LINE}")
+      printf '%s %s\n' "$PROXY_IP" "${chunk[*]}"
+      i=$((i + HOSTS_PER_LINE))
+    done
+    printf '%s\n' "$MARK_END"
+  } | $SUDO tee -a "$HOSTS" >/dev/null
 fi
 flush_dns_macos
 

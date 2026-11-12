@@ -30,6 +30,10 @@ $CombinedPem = Join-Path $WorkDir "ca-combined.pem"
 $BasePem = Join-Path $WorkDir "base-ca.pem"
 $EnvOriginal = Join-Path $WorkDir "env-original.txt"
 
+# Windows DNS client applies only the first 9 names on a single hosts line.
+# api2.cursor.sh (and api2geo/api2direct) stay on Cursor origin: Plan & Usage
+# (DashboardService/GetCurrentPeriodUsage) is not implemented on the proxy yet.
+$HostsPerLine = 9
 $Hostnames = @(
   "agent.api5.cursor.sh", "agentn.api5.cursor.sh",
   "agent-gcpp-uswest.api5.cursor.sh", "agentn-gcpp-uswest.api5.cursor.sh",
@@ -37,8 +41,8 @@ $Hostnames = @(
   "agent.global.api5.cursor.sh", "agentn.global.api5.cursor.sh",
   "agentn-gcpp-uswest.global.api5.cursor.sh", "agent-gcpp-uswest.global.api5.cursor.sh",
   "agentn-gcpp-eucentral.global.api5.cursor.sh", "agentn-gcpp-apsoutheast.global.api5.cursor.sh",
-  # Repository ingestion and the extension's HTTP/1.1 fallback.
-  "repo42.cursor.sh", "api2.cursor.sh",
+  # Repository ingestion (HTTP/2). api2 is intentionally absent — see above.
+  "repo42.cursor.sh",
   # Telemetry (AnalyticsService, MetricsService, TraceService) — telemBackendUrl.
   "api3.cursor.sh"
 )
@@ -59,8 +63,8 @@ if ($DryRun) {
   Write-Host ("   hosts file: " + $HostsPath)
   Write-Host ("   CA source:  " + $url)
   Write-Host ("   CA target:  " + $CaFile)
-  Write-Host "   note: repository traffic (repo42) is gRPC over HTTP/2; api2 is the"
-  Write-Host "         extension's HTTP/1.1 fallback host and is redirected too."
+  Write-Host "   note: Windows applies only $HostsPerLine names per hosts line; the block is split."
+  Write-Host "   note: api2.cursor.sh is not redirected. Plan & Usage still calls Cursor origin."
   return
 }
 
@@ -80,7 +84,14 @@ function Update-Hosts {
   $content = [regex]::Replace($content, "(?ms)^# BEGIN cursor-byok[^\r\n]*\r?\n.*?^# END cursor-byok[^\r\n]*\r?\n?", "")
   $content = $content.TrimEnd()
   if (-not $Uninstall) {
-    $block = "$MarkBegin`r`n$Ip $($Hostnames -join ' ')`r`n$MarkEnd"
+    $lines = @($MarkBegin, "# api2.cursor.sh is not redirected: Plan & Usage still calls Cursor origin.")
+    for ($i = 0; $i -lt $Hostnames.Count; $i += $HostsPerLine) {
+      $take = [Math]::Min($HostsPerLine, $Hostnames.Count - $i)
+      $chunk = $Hostnames[$i..($i + $take - 1)]
+      $lines += "$Ip $($chunk -join ' ')"
+    }
+    $lines += $MarkEnd
+    $block = $lines -join "`r`n"
     $content = $content + "`r`n`r`n" + $block
   }
   $content = $content.TrimStart() + "`r`n"
