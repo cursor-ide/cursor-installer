@@ -7,8 +7,9 @@ It does two things on the client machine:
 
 1. adds a managed block to the system `hosts` file so Cursor agent hostnames
    resolve to your proxy IP — agent hosts (`*.api5.cursor.sh`), telemetry
-   (`api3.cursor.sh`) and repository ingestion (`repo42.cursor.sh`).
-   `api2.cursor.sh` is not redirected: Plan & Usage still calls Cursor origin;
+   (`api3.cursor.sh`), repository ingestion (`repo42.cursor.sh`), and `api2*`
+   (`api2` / `api2geo` / `api2direct`) so PrivateInference AdmitRun/ReportUsage
+   and local Plan & Usage stubs stay on the proxy instead of Cursor origin;
 2. installs the proxy's local CA into the OS trust store and exports
    `NODE_EXTRA_CA_CERTS` so Cursor's Node-based agent host trusts the proxy's TLS
    certificate.
@@ -107,9 +108,10 @@ The hosts entries live between two markers and are rewritten on every run:
 
 ```
 # BEGIN cursor-byok
-# api2.cursor.sh is not redirected: Plan & Usage still calls Cursor origin.
+# api2* redirected: AdmitRun/ReportUsage must not meter Cursor Included Usage.
 <proxy-ip> agent.api5.cursor.sh ...            # at most 9 names per line
 <proxy-ip> ... repo42.cursor.sh api3.cursor.sh
+  api2.cursor.sh api2geo.cursor.sh api2direct.cursor.sh
 # END cursor-byok
 ```
 
@@ -128,11 +130,13 @@ Hostnames covered:
 * `agentn-gcpp-uswest.global.api5.cursor.sh`, `agent-gcpp-uswest.global.api5.cursor.sh`
 * `agentn-gcpp-eucentral.global.api5.cursor.sh`, `agentn-gcpp-apsoutheast.global.api5.cursor.sh`
 
-**Plan & Usage** (`aiserver.v1.DashboardService`, including `GetCurrentPeriodUsage`):
+**Account + private-inference metering** (`backendUrl` / CNAME chain):
 
-* `api2.cursor.sh` — left on Cursor origin. `api2geo.cursor.sh` and
-  `api2direct.cursor.sh` are not listed either, so the settings meter still
-  shows the real Cursor plan. The proxy does not implement this surface yet.
+* `api2.cursor.sh`, `api2geo.cursor.sh`, `api2direct.cursor.sh` — pointed at the
+  proxy. Local stubs answer `PrivateInferenceService` (`AdmitRun` always admits,
+  `ReportUsage` discards meters) and the truthful `DashboardService` subset
+  (including `GetCurrentPeriodUsage`), so local-loop turns do not burn Cursor
+  Included Usage and Plan & Usage reflects the proxy's local numbers.
 
 **Telemetry** (`telemBackendUrl`: `AnalyticsService`, `MetricsService`,
 `TraceService`, `SubmitLogs`):
@@ -163,11 +167,12 @@ required; rotate manually before expiry.
 
 ### HTTP/2 vs HTTP/1.1
 
-* Agent, inference, CmdK and RepositoryService traffic is gRPC and must reach
-  the backend over HTTP/2 (`listen 443 ssl http2` + `grpc_pass`).
+* Agent, inference, CmdK, RepositoryService and api2 (Dashboard /
+  PrivateInference) traffic is gRPC and must reach the backend over HTTP/2
+  (`listen 443 ssl http2` + `grpc_pass`).
 * `repo42.cursor.sh` is the repository path that must work; it uses HTTP/2.
-* `api2.cursor.sh` is not in the hosts block. Plan & Usage keeps calling Cursor
-  origin until that API is implemented on the proxy.
+* `api2.cursor.sh` (plus geo/direct CNAMEs) must be in the hosts block so
+  AdmitRun/ReportUsage and Plan & Usage hit the proxy stubs.
 
 ### Environment (proxy host)
 
@@ -200,9 +205,9 @@ curl -fsSL https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.1.1/
 ```
 
 After restarting Cursor, open a chat and send a message. On the proxy you should see
-`POST /agent.v1.AgentService/Run` and the model being proxied. Repository calls
-appear as `RepositoryService` RPCs. Plan & Usage stays on Cursor (`api2.cursor.sh`)
-and does not show up in the proxy log.
+`POST /agent.v1.AgentService/Run` (or `InferenceService/RunInference`) and the model
+being proxied, plus `[private-inference] method=AdmitRun` / `ReportUsage` when the
+local loop meters a turn. Repository and Dashboard calls appear as their own RPCs.
 
 The installer ends with its own checks: DNS resolution for every redirected host,
 TLS requests (with the installed CA) to one representative each for agent, dashboard

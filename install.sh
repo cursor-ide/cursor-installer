@@ -64,12 +64,12 @@ agentn-gcpp-uswest.global.api5.cursor.sh agent-gcpp-uswest.global.api5.cursor.sh
 agentn-gcpp-eucentral.global.api5.cursor.sh agentn-gcpp-apsoutheast.global.api5.cursor.sh"
 
 # Telemetry (AnalyticsService, MetricsService, TraceService) — telemBackendUrl.
-# Plan & Usage is api2 and is intentionally not in this list.
 TELEMETRY_HOSTNAMES="api3.cursor.sh"
 
-# Repository ingestion (repo42). api2.cursor.sh is omitted on purpose: Plan & Usage
-# (DashboardService/GetCurrentPeriodUsage) still calls Cursor origin.
-API_HOSTNAMES="repo42.cursor.sh"
+# Repository ingestion (repo42) plus api2* (backendUrl / CNAME chain). api2 must
+# hit the proxy so PrivateInferenceService AdmitRun/ReportUsage do not meter
+# Cursor Included Usage for local-loop turns.
+API_HOSTNAMES="repo42.cursor.sh api2.cursor.sh api2geo.cursor.sh api2direct.cursor.sh"
 # Windows DNS client applies only the first 9 names on a single hosts line.
 HOSTS_PER_LINE=9
 
@@ -357,7 +357,7 @@ print_plan() {
   echo "   CA source:  $CA_URL"
   echo "   CA target:  $CA_FILE_USER"
   echo "   note: Windows applies only $HOSTS_PER_LINE names per hosts line; the block is split."
-  echo "   note: api2.cursor.sh is not redirected. Plan & Usage still calls Cursor origin."
+  echo "   note: api2* is redirected so PrivateInference AdmitRun/ReportUsage stay local."
 }
 
 if [[ "$DRY_RUN" == "1" ]]; then
@@ -391,7 +391,7 @@ if [[ "$DRY_RUN" == "1" ]]; then
 else
   {
     printf '\n%s\n' "$MARK_BEGIN"
-    printf '%s\n' "# api2.cursor.sh is not redirected: Plan & Usage still calls Cursor origin."
+    printf '%s\n' "# api2* redirected: AdmitRun/ReportUsage must not meter Cursor Included Usage."
     # shellcheck disable=SC2086
     names=($HOSTNAMES)
     i=0

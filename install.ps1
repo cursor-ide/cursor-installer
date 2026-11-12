@@ -31,8 +31,8 @@ $BasePem = Join-Path $WorkDir "base-ca.pem"
 $EnvOriginal = Join-Path $WorkDir "env-original.txt"
 
 # Windows DNS client applies only the first 9 names on a single hosts line.
-# api2.cursor.sh (and api2geo/api2direct) stay on Cursor origin: Plan & Usage
-# (DashboardService/GetCurrentPeriodUsage) is not implemented on the proxy yet.
+# api2* must hit the proxy: PrivateInferenceService AdmitRun/ReportUsage otherwise
+# meters Included Usage on Cursor origin even when the model runs locally.
 $HostsPerLine = 9
 $Hostnames = @(
   "agent.api5.cursor.sh", "agentn.api5.cursor.sh",
@@ -41,10 +41,11 @@ $Hostnames = @(
   "agent.global.api5.cursor.sh", "agentn.global.api5.cursor.sh",
   "agentn-gcpp-uswest.global.api5.cursor.sh", "agent-gcpp-uswest.global.api5.cursor.sh",
   "agentn-gcpp-eucentral.global.api5.cursor.sh", "agentn-gcpp-apsoutheast.global.api5.cursor.sh",
-  # Repository ingestion (HTTP/2). api2 is intentionally absent — see above.
   "repo42.cursor.sh",
   # Telemetry (AnalyticsService, MetricsService, TraceService) — telemBackendUrl.
-  "api3.cursor.sh"
+  "api3.cursor.sh",
+  # Account + private-inference metering (backendUrl / CNAME chain).
+  "api2.cursor.sh", "api2geo.cursor.sh", "api2direct.cursor.sh"
 )
 
 $url = if ($CaUrl) { $CaUrl } else { "http://$Ip/ca.crt" }
@@ -64,7 +65,7 @@ if ($DryRun) {
   Write-Host ("   CA source:  " + $url)
   Write-Host ("   CA target:  " + $CaFile)
   Write-Host "   note: Windows applies only $HostsPerLine names per hosts line; the block is split."
-  Write-Host "   note: api2.cursor.sh is not redirected. Plan & Usage still calls Cursor origin."
+  Write-Host "   note: api2* is redirected so PrivateInference AdmitRun/ReportUsage stay local."
   return
 }
 
@@ -84,7 +85,7 @@ function Update-Hosts {
   $content = [regex]::Replace($content, "(?ms)^# BEGIN cursor-byok[^\r\n]*\r?\n.*?^# END cursor-byok[^\r\n]*\r?\n?", "")
   $content = $content.TrimEnd()
   if (-not $Uninstall) {
-    $lines = @($MarkBegin, "# api2.cursor.sh is not redirected: Plan & Usage still calls Cursor origin.")
+    $lines = @($MarkBegin, "# api2* redirected: AdmitRun/ReportUsage must not meter Cursor Included Usage.")
     for ($i = 0; $i -lt $Hostnames.Count; $i += $HostsPerLine) {
       $take = [Math]::Min($HostsPerLine, $Hostnames.Count - $i)
       $chunk = $Hostnames[$i..($i + $take - 1)]
