@@ -63,7 +63,7 @@ agent.global.api5.cursor.sh agentn.global.api5.cursor.sh \
 agentn-gcpp-uswest.global.api5.cursor.sh agent-gcpp-uswest.global.api5.cursor.sh \
 agentn-gcpp-eucentral.global.api5.cursor.sh agentn-gcpp-apsoutheast.global.api5.cursor.sh"
 
-# Telemetry (AnalyticsService, MetricsService, TraceService) — telemBackendUrl.
+# Telemetry (telemBackendUrl) — VPS nginx → telemetry-receiver local-ack.
 TELEMETRY_HOSTNAMES="api3.cursor.sh"
 
 # Repository ingestion (repo42) plus api2* (backendUrl / CNAME chain). api2 must

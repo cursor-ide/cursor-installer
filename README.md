@@ -139,11 +139,13 @@ Hostnames covered:
   Included Usage and Plan & Usage reflects the proxy's local numbers.
 
 **Telemetry** (`telemBackendUrl`: `AnalyticsService`, `MetricsService`,
-`TraceService`, `SubmitLogs`):
+`TraceService`, `SubmitLogs`, and related services):
 
-* `api3.cursor.sh` — pointed at the proxy. Those RPCs are not implemented; the
-  proxy log line includes `rpc=… telemetry=1` so a client error can be tied to
-  the request.
+* `api3.cursor.sh` — pointed at the VPS public IP. nginx terminates TLS and
+  routes those RPCs to the `telemetry-receiver` on `127.0.0.1:18198`. The
+  receiver acks locally (same shapes as the proxy stubs) and, when
+  `TELEMETRY_CAPTURE=1`, writes decoded rows to `telemetry.db`. It does not
+  forward to Cursor origin. Agent / CmdK traffic stays on the proxy path.
 
 **Repository ingestion** (`aiserver.v1.RepositoryService`):
 
@@ -170,6 +172,9 @@ required; rotate manually before expiry.
 * Agent, inference, CmdK, RepositoryService and api2 (Dashboard /
   PrivateInference) traffic is gRPC and must reach the backend over HTTP/2
   (`listen 443 ssl http2` + `grpc_pass`).
+* Telemetry on `api3.cursor.sh` is Connect unary (`application/proto`); nginx
+  may `proxy_pass` those paths over HTTP/1.1 to the telemetry receiver while
+  everything else stays on `grpc_pass`.
 * `repo42.cursor.sh` is the repository path that must work; it uses HTTP/2.
 * `api2.cursor.sh` (plus geo/direct CNAMEs) must be in the hosts block so
   AdmitRun/ReportUsage and Plan & Usage hit the proxy stubs.
@@ -286,31 +291,43 @@ redirect — only the hostname list may need refreshing.
 * **macOS: chat fails but `curl` works** — Cursor was still running when the installer
   set the environment. Quit it (Cmd-Q, not just closing the window) and reopen, or run
   `sudo security add-trusted-cert …` in Terminal.app to trust the CA system-wide.
-* **"Local loop can't run this model … no prompt metadata"** — the account is on Cursor's
-  local agent loop. Select an OpenAI-compatible custom model (see
-  [Model selection](#model-selection-important)); the proxy cannot emulate vendor
-  prompt metadata.
+* **"Local loop can't run this model … no prompt metadata"** — rare with a current
+  proxy image: the proxy already sends minimal `RunInference` prompt metadata for
+  local-loop accounts. If you still see this, update the proxy and confirm
+  `UPSTREAM_BASE_URL` / `UPSTREAM_API_KEY` are set (see
+  [Model selection](#model-selection-important)).
 * **Commands hang / "Running command" forever** — the proxy must fall back from HTTP/2
   shell streaming to plain shell execution for older Cursor builds; make sure you run a
   current proxy image.
 
 ## Model selection (important)
 
-The redirect only changes where Cursor sends its agent traffic. Cursor still decides
-*which model* to run, and for some accounts it runs the agent loop locally
-(`agent_host_local_loop`), requesting vendor prompt metadata from the backend. A
-self-hosted proxy cannot provide vendor metadata, so those accounts fail with:
+The redirect only changes *where* Cursor sends agent and model-catalog traffic.
+Which model id runs is still chosen in the Cursor UI.
 
-```
-Local loop can't run this model
-The server sent no prompt metadata for "<model>"
-```
+With a current `cursor-backend` image you do **not** need to add a separate
+OpenAI-compatible “custom model” in Settings for local-loop accounts to work:
 
-Fix: add and select an **OpenAI-compatible custom model** in Cursor
-(Settings → Models → Add model, base URL = your provider, e.g.
-`https://api.example.com/v1`, plus its API key). With a custom model selected,
-Cursor uses the backend loop, and chat plus the tool loop work through the proxy.
-Pick that model in a new chat before testing.
+* The proxy answers `AiService/AvailableModels` and `AgentService/GetUsableModels`
+  from the same catalog (`USABLE_MODELS`, or `upstream`/`*` → provider `/models`,
+  else `DEFAULT_MODEL`).
+* For `agent_host_local_loop`, `InferenceService/RunInference` includes minimal
+  prompt metadata (`vendor=openai`, `prompt_version=latest`, resolved model id,
+  mode ids). Chat can start without a client-side custom-model entry.
+* The proxy then calls your OpenAI-compatible upstream. Set `UPSTREAM_BASE_URL`
+  and `UPSTREAM_API_KEY` on the proxy. If the client sends no model id, the proxy
+  uses `DEFAULT_MODEL`.
+
+What to do on the client:
+
+1. Open Settings → Models and confirm the listed ids match the proxy catalog
+   (not only Cursor’s stock cloud models).
+2. Start a **new** chat and pick one of those ids before sending.
+3. Optional: if you configure BYOK fields in Cursor (base URL + key on the
+   model), those still win over the proxy env pair for that turn.
+
+If chat still fails with “no prompt metadata”, upgrade the proxy image first —
+do not treat “Add custom model” as the primary fix anymore.
 
 ## Security notes
 

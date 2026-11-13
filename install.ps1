@@ -42,7 +42,7 @@ $Hostnames = @(
   "agentn-gcpp-uswest.global.api5.cursor.sh", "agent-gcpp-uswest.global.api5.cursor.sh",
   "agentn-gcpp-eucentral.global.api5.cursor.sh", "agentn-gcpp-apsoutheast.global.api5.cursor.sh",
   "repo42.cursor.sh",
-  # Telemetry (AnalyticsService, MetricsService, TraceService) — telemBackendUrl.
+  # Telemetry (telemBackendUrl) — VPS nginx → telemetry-receiver local-ack.
   "api3.cursor.sh",
   # Account + private-inference metering (backendUrl / CNAME chain).
   "api2.cursor.sh", "api2geo.cursor.sh", "api2direct.cursor.sh"
