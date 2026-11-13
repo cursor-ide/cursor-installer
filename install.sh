@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cursor-byok bootstrap (Linux + macOS).
+# cursor-backend bootstrap (Linux + macOS).
 # Installs a local CA and redirects every Cursor backend hostname (agent, account
 # dashboard and repository ingestion) to your own backend.
 #
@@ -10,15 +10,15 @@ set -euo pipefail
 
 PROXY_IP="${CURSOR_PROXY_IP:-}"
 CA_URL="${CURSOR_CA_URL:-}"
-MARK_BEGIN="# BEGIN cursor-byok"
-MARK_END="# END cursor-byok"
+MARK_BEGIN="# BEGIN cursor-backend"
+MARK_END="# END cursor-backend"
 UNINSTALL=0
 TARGET_USER_OPT=""
 DRY_RUN=0
 
 usage() {
   cat <<EOF
-cursor-byok installer (Linux/macOS)
+cursor-backend installer (Linux/macOS)
   --ip <addr>      proxy IP (required unless CURSOR_PROXY_IP is set)
   --ca-url <url>   CA download URL (default http://<ip>/ca.crt)
   --user <name>    desktop user to configure (default: sudo caller)
@@ -118,12 +118,12 @@ HOSTS=/etc/hosts
 [[ -f /private/etc/hosts ]] && HOSTS=/private/etc/hosts
 
 CA_DIR_LINUX=/usr/local/share/ca-certificates
-CA_FILE_LINUX="$CA_DIR_LINUX/cursor-byok-ca.crt"
-CA_FILE_USER="$TARGET_HOME/.cursor-byok-ca.crt"
-LAUNCH_AGENT="$TARGET_HOME/Library/LaunchAgents/net.cursor-ide.cursor-byok.plist"
-LAUNCH_AGENT_LABEL="net.cursor-ide.cursor-byok"
+CA_FILE_LINUX="$CA_DIR_LINUX/cursor-backend-ca.crt"
+CA_FILE_USER="$TARGET_HOME/.cursor-backend-ca.crt"
+LAUNCH_AGENT="$TARGET_HOME/Library/LaunchAgents/net.cursor-ide.cursor-backend.plist"
+LAUNCH_AGENT_LABEL="net.cursor-ide.cursor-backend"
 SHELL_RC="$TARGET_HOME/.zprofile"
-ENV_DIR_CONF="$TARGET_HOME/.config/environment.d/99-cursor-byok.conf"
+ENV_DIR_CONF="$TARGET_HOME/.config/environment.d/99-cursor-backend.conf"
 
 as_user() {
   if [[ "$(id -u)" -eq 0 && "$TARGET_USER" != "root" ]]; then

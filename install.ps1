@@ -21,10 +21,10 @@ if (-not $Uninstall -and [string]::IsNullOrWhiteSpace($Ip)) {
 }
 
 $ErrorActionPreference = "Stop"
-$MarkBegin = "# BEGIN cursor-byok"
-$MarkEnd = "# END cursor-byok"
+$MarkBegin = "# BEGIN cursor-backend"
+$MarkEnd = "# END cursor-backend"
 $HostsPath = Join-Path $env:SystemRoot "System32\drivers\etc\hosts"
-$WorkDir = Join-Path $env:ProgramData "cursor-byok"
+$WorkDir = Join-Path $env:ProgramData "cursor-backend"
 $CaFile = Join-Path $WorkDir "ca.crt"
 $CombinedPem = Join-Path $WorkDir "ca-combined.pem"
 $BasePem = Join-Path $WorkDir "base-ca.pem"
@@ -82,7 +82,7 @@ function Read-HostsText {
 
 function Update-Hosts {
   $content = Read-HostsText
-  $content = [regex]::Replace($content, "(?ms)^# BEGIN cursor-byok[^\r\n]*\r?\n.*?^# END cursor-byok[^\r\n]*\r?\n?", "")
+  $content = [regex]::Replace($content, "(?ms)^# BEGIN cursor-backend[^\r\n]*\r?\n.*?^# END cursor-backend[^\r\n]*\r?\n?", "")
   $content = $content.TrimEnd()
   if (-not $Uninstall) {
     $lines = @($MarkBegin, "# api2* redirected: AdmitRun/ReportUsage must not meter Cursor Included Usage.")
@@ -102,7 +102,7 @@ function Update-Hosts {
     throw "refusing to write hosts: resulting content too short (" + $content.Length + " chars)"
   }
 
-  Copy-Item $HostsPath "$HostsPath.bak-cursor-byok" -Force -ErrorAction SilentlyContinue
+  Copy-Item $HostsPath "$HostsPath.bak-cursor-backend" -Force -ErrorAction SilentlyContinue
   $tmp = "$HostsPath.cursor-tmp"
   Set-Content -Path $tmp -Value $content -Encoding ASCII -NoNewline
   Move-Item -Path $tmp -Destination $HostsPath -Force

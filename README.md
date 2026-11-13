@@ -1,4 +1,4 @@
-# cursor-byok bootstrap
+# cursor-backend bootstrap
 
 One-line installer that points **Cursor** at your own OpenAI-compatible backend
 without patching Cursor's installation files.
@@ -75,8 +75,8 @@ To trust it system-wide afterwards:
 
 ```bash
 sudo security add-trusted-cert -d -r trustRoot \
-  -k /Library/Keychains/System.keychain ~/.cursor-byok-ca.crt
-# or: open ~/.cursor-byok-ca.crt in Keychain Access and set "Always Trust"
+  -k /Library/Keychains/System.keychain ~/.cursor-backend-ca.crt
+# or: open ~/.cursor-backend-ca.crt in Keychain Access and set "Always Trust"
 ```
 
 ---
@@ -100,19 +100,19 @@ sudo security add-trusted-cert -d -r trustRoot \
 
 | Platform | hosts | trust store | env |
 | --- | --- | --- | --- |
-| Linux | `/etc/hosts` (managed block) | `/usr/local/share/ca-certificates/cursor-byok-ca.crt` + `update-ca-certificates` | `~/.config/environment.d/99-cursor-byok.conf` and `systemctl --user set-environment` |
-| Windows | `%SystemRoot%\System32\drivers\etc\hosts` (managed block) | `LocalMachine\Root` via `certutil -addstore` | user `NODE_EXTRA_CA_CERTS` → `%ProgramData%\cursor-byok\ca-combined.pem` |
-| macOS | `/private/etc/hosts` (managed block) | System keychain via `security add-trusted-cert` (needs an interactive approval; best effort over SSH) | `launchctl setenv` in the GUI session + `~/Library/LaunchAgents/net.cursor-ide.cursor-byok.plist` + managed block in `~/.zprofile` |
+| Linux | `/etc/hosts` (managed block) | `/usr/local/share/ca-certificates/cursor-backend-ca.crt` + `update-ca-certificates` | `~/.config/environment.d/99-cursor-backend.conf` and `systemctl --user set-environment` |
+| Windows | `%SystemRoot%\System32\drivers\etc\hosts` (managed block) | `LocalMachine\Root` via `certutil -addstore` | user `NODE_EXTRA_CA_CERTS` → `%ProgramData%\cursor-backend\ca-combined.pem` |
+| macOS | `/private/etc/hosts` (managed block) | System keychain via `security add-trusted-cert` (needs an interactive approval; best effort over SSH) | `launchctl setenv` in the GUI session + `~/Library/LaunchAgents/net.cursor-ide.cursor-backend.plist` + managed block in `~/.zprofile` |
 
 The hosts entries live between two markers and are rewritten on every run:
 
 ```
-# BEGIN cursor-byok
+# BEGIN cursor-backend
 # api2* redirected: AdmitRun/ReportUsage must not meter Cursor Included Usage.
 <proxy-ip> agent.api5.cursor.sh ...            # at most 9 names per line
 <proxy-ip> ... repo42.cursor.sh api3.cursor.sh
   api2.cursor.sh api2geo.cursor.sh api2direct.cursor.sh
-# END cursor-byok
+# END cursor-backend
 ```
 
 Windows applies only the first 9 names on a hosts line and ignores the rest.
@@ -218,12 +218,12 @@ Manual check (Linux/macOS):
 
 ```bash
 getent hosts agentn.global.api5.cursor.sh     # Linux; macOS: dscacheutil -q host -a name agentn.global.api5.cursor.sh
-curl -sS --cacert ~/.cursor-byok-ca.crt https://agentn.global.api5.cursor.sh/ -o /dev/null -w '%{http_code}\n'
+curl -sS --cacert ~/.cursor-backend-ca.crt https://agentn.global.api5.cursor.sh/ -o /dev/null -w '%{http_code}\n'
 # new names — TLS SAN check proves the cert covers them
-curl -sS --http2 --cacert ~/.cursor-byok-ca.crt https://api3.cursor.sh/ -o /dev/null -w '%{http_code}\n'
-curl -sS --http2 --cacert ~/.cursor-byok-ca.crt https://repo42.cursor.sh/ -o /dev/null -w '%{http_code}\n'
+curl -sS --http2 --cacert ~/.cursor-backend-ca.crt https://api3.cursor.sh/ -o /dev/null -w '%{http_code}\n'
+curl -sS --http2 --cacert ~/.cursor-backend-ca.crt https://repo42.cursor.sh/ -o /dev/null -w '%{http_code}\n'
 # macOS: prove Cursor's runtime trusts the CA
-NODE_EXTRA_CA_CERTS=~/.cursor-byok-ca.crt ELECTRON_RUN_AS_NODE=1 \
+NODE_EXTRA_CA_CERTS=~/.cursor-backend-ca.crt ELECTRON_RUN_AS_NODE=1 \
   /Applications/Cursor.app/Contents/MacOS/Cursor -e \
   'require("https").get("https://agentn.global.api5.cursor.sh/",r=>{console.log(r.statusCode);process.exit(0)}).on("error",e=>{console.log(e.code);process.exit(1)})'
 ```
