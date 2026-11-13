@@ -21,7 +21,7 @@ hostnames — see [Maintenance](#maintenance)).
 Proxy IP is **required** (`-Ip` / `--ip` or `CURSOR_PROXY_IP`). There is no
 hardcoded default in the repo.
 
-Pinned to release **v1.1.1** (immutable, CDN-friendly). Replace `v1.1.1` with `main`
+Pinned to release **v1.0.0** (immutable, CDN-friendly). Replace `v1.0.0` with `main`
 if you want the latest commit instead of a release.
 
 ---
@@ -31,27 +31,27 @@ if you want the latest commit instead of a release.
 ### Linux and macOS
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.1.1/install.sh \
+curl -fsSL https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.0.0/install.sh \
   | sudo bash -s -- --ip "$CURSOR_PROXY_IP"
 ```
 
 Example:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.1.1/install.sh \
+curl -fsSL https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.0.0/install.sh \
   | sudo bash -s -- --ip 203.0.113.10
 ```
 
 ### Windows (PowerShell **as Administrator**)
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.1.1/install.ps1))) -Ip $env:CURSOR_PROXY_IP
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.0.0/install.ps1))) -Ip $env:CURSOR_PROXY_IP
 ```
 
 Example:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.1.1/install.ps1))) -Ip 203.0.113.10
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.0.0/install.ps1))) -Ip 203.0.113.10
 ```
 
 Then **restart Cursor**. On Linux, log out and back in once (or reboot) so the
@@ -200,13 +200,13 @@ the CA path):
 
 ```bash
 # Linux / macOS
-curl -fsSL https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.1.1/install.sh \
+curl -fsSL https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.0.0/install.sh \
   | sudo bash -s -- --ip "$CURSOR_PROXY_IP" --dry-run
 ```
 
 ```powershell
 # Windows
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.1.1/install.ps1))) -Ip $env:CURSOR_PROXY_IP -DryRun
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.0.0/install.ps1))) -Ip $env:CURSOR_PROXY_IP -DryRun
 ```
 
 After restarting Cursor, open a chat and send a message. On the proxy you should see
@@ -246,14 +246,14 @@ Resolve-DnsName agentn.global.api5.cursor.sh -Type A | Select-Object -First 1 IP
 Linux/macOS (also removes the macOS LaunchAgent and `~/.zprofile` block):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.1.1/install.sh \
+curl -fsSL https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.0.0/install.sh \
   | sudo bash -s -- --uninstall
 ```
 
 Windows (elevated):
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.1.1/install.ps1))) -Uninstall
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/cursor-ide/cursor-installer/v1.0.0/install.ps1))) -Uninstall
 ```
 
 This removes the hosts block, the CA from the trust store and the env var/file.
